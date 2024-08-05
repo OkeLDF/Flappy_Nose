@@ -7,6 +7,8 @@ face_cascade = cv.CascadeClassifier('haarcascade_frontalface_default.xml')
 color = (0, 255, 0) # rgb
 border_color = (0, 0, 255)
 circle_r = 30
+# x_speed = -8
+x_speed = -12
 
 screen_w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
 screen_h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
@@ -17,7 +19,7 @@ line1 = ((int(0.3*screen_w), 0), (int(0.3*screen_w), screen_h))
 line2 = ((int(0.7*screen_w), 0), (int(0.7*screen_w), screen_h))
 
 class Obstacle:
-    def __init__(self, obstacle_width=80, hole_size=200, color=(255,255,0)):
+    def __init__(self, obstacle_width=60, hole_size=120, color=(255,255,0)):
         global screen_w
         global screen_h
         self.color = color
@@ -44,8 +46,8 @@ class Obstacle:
         self.superior_pillar[3] = value
         self.inferior_pillar[1] = value + self.hole_size
 
-    def randomize_in_right(self, screen_width):
-        self.set_x(screen_width)
+    def randomize_in_right(self):
+        self.set_x(screen_w)
         self.set_y(rd.choice(range(0, screen_h-200)))
 
     def get_pillars(self):
@@ -56,6 +58,15 @@ class Obstacle:
         p2 = self.inferior_pillar
         cv.rectangle(frame, (p1[0], p1[1]), (p1[0]+p1[2], p1[1]+p1[3]), self.color, 5)
         cv.rectangle(frame, (p2[0], p2[1]), (p2[0]+p2[2], p2[1]+p2[3]), self.color, 5)
+
+    def touching(self, circle):
+        for pillar in self.get_pillars():
+            is_between_x1_and_x2 = circle[0] + circle_r > pillar[0] and (pillar[0] + pillar[2]) > circle[0] - circle_r
+            is_between_y1_and_y2 = circle[1] + circle_r > pillar[1] and (pillar[1] + pillar[3]) > circle[1] - circle_r
+        
+            if is_between_x1_and_x2 and is_between_y1_and_y2:
+                return True
+        return False
 
 def error(msg:str):
     print("\033[31m" + msg + "\033[m")
@@ -68,19 +79,27 @@ obstacle = Obstacle()
 
 def detect_face(frame):
     global face_cascade
+    global border_color
+    global color
+    global obstacle
     face_img = frame.copy()
     face_img = cv.cvtColor(face_img, cv.COLOR_RGB2BGR)
 
-    cv.line(face_img, line1[0], line1[1], border_color, 3)
-    cv.line(face_img, line2[0], line2[1], border_color, 3)
-
-    obstacle.draw(face_img)
-
     face_rect = face_cascade.detectMultiScale(face_img, scaleFactor=1.2, minNeighbors=5)
-    for (x,y, w, h) in face_rect:
+    for (x, y, w, h) in face_rect:
         coord = (x+w//2, y+h//2)
+
+        if obstacle.touching((coord[0], coord[1])):
+            color = (255, 0, 0)
+        else:
+            color = (0, 255, 0)
+
         if(coord[0]>line1[0][0] and coord[0]<line2[0][0]):
             cv.circle(face_img, coord, circle_r, color, 5)
+
+    cv.line(face_img, line1[0], line1[1], border_color, 3)
+    cv.line(face_img, line2[0], line2[1], border_color, 3)
+    obstacle.draw(face_img)
 
     return cv.cvtColor(face_img, cv.COLOR_BGR2RGB)
 
@@ -95,10 +114,9 @@ while cap.isOpened():
     frame_face = detect_face(frame)
     cv.imshow("Webcam Feed", frame_face)
 
-    obstacle.addto_x(-8)
+    obstacle.addto_x(x_speed)
     if obstacle.superior_pillar[0] + obstacle.superior_pillar[2] < 0:
-        obstacle.set_x(screen_w)
-        obstacle.set_y(rd.choice(range(0,450)))
+        obstacle.randomize_in_right()
 
     key = cv.waitKey(1) & 0xFF
     
