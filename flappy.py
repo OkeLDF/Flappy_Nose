@@ -1,10 +1,61 @@
 import cv2 as cv
+import random as rd
 
 cap = cv.VideoCapture(0)
 face_cascade = cv.CascadeClassifier('haarcascade_frontalface_default.xml')
 
 color = (0, 255, 0) # rgb
 border_color = (0, 0, 255)
+circle_r = 30
+
+screen_w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+screen_h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+
+print('Capture dimensions:', screen_h, screen_w)
+
+line1 = ((int(0.3*screen_w), 0), (int(0.3*screen_w), screen_h))
+line2 = ((int(0.7*screen_w), 0), (int(0.7*screen_w), screen_h))
+
+class Obstacle:
+    def __init__(self, obstacle_width=80, hole_size=200, color=(255,255,0)):
+        global screen_w
+        global screen_h
+        self.color = color
+        self.hole_size = hole_size
+        self.width = obstacle_width
+        self.superior_pillar = [screen_w, 0, self.width, 0] # x, y, w, h
+        self.inferior_pillar = [screen_w, self.hole_size, self.width, screen_h]
+    
+    def addto_x(self, value:int):
+        self.superior_pillar[0] += value
+        self.inferior_pillar[0] += value
+
+    def get_x(self):
+        return self.superior_pillar[0]
+    
+    def get_y(self):
+        return self.superior_pillar[1]
+
+    def set_x(self, value:int):
+        self.superior_pillar[0] = value
+        self.inferior_pillar[0] = value
+
+    def set_y(self, value:int):
+        self.superior_pillar[3] = value
+        self.inferior_pillar[1] = value + self.hole_size
+
+    def randomize_in_right(self, screen_width):
+        self.set_x(screen_width)
+        self.set_y(rd.choice(range(0, screen_h-200)))
+
+    def get_pillars(self):
+        return [self.superior_pillar, self.inferior_pillar]
+
+    def draw(self, frame):
+        p1 = self.superior_pillar
+        p2 = self.inferior_pillar
+        cv.rectangle(frame, (p1[0], p1[1]), (p1[0]+p1[2], p1[1]+p1[3]), self.color, 5)
+        cv.rectangle(frame, (p2[0], p2[1]), (p2[0]+p2[2], p2[1]+p2[3]), self.color, 5)
 
 def error(msg:str):
     print("\033[31m" + msg + "\033[m")
@@ -13,26 +64,23 @@ def error(msg:str):
 def warning(msg:str):
     print("\033[33m" + msg + "\033[m")
 
+obstacle = Obstacle()
+
 def detect_face(frame):
     global face_cascade
     face_img = frame.copy()
     face_img = cv.cvtColor(face_img, cv.COLOR_RGB2BGR)
 
-    fw = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-    fh = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-
-    line1 = ((int(0.3*fw), 0), (int(0.3*fw), fh))
-    line2 = ((int(0.7*fw), 0), (int(0.7*fw), fh))
-
     cv.line(face_img, line1[0], line1[1], border_color, 3)
     cv.line(face_img, line2[0], line2[1], border_color, 3)
 
+    obstacle.draw(face_img)
+
     face_rect = face_cascade.detectMultiScale(face_img, scaleFactor=1.2, minNeighbors=5)
     for (x,y, w, h) in face_rect:
-        r = 30
         coord = (x+w//2, y+h//2)
         if(coord[0]>line1[0][0] and coord[0]<line2[0][0]):
-            cv.circle(face_img, coord, r, color, 5)
+            cv.circle(face_img, coord, circle_r, color, 5)
 
     return cv.cvtColor(face_img, cv.COLOR_BGR2RGB)
 
@@ -46,7 +94,12 @@ while cap.isOpened():
 
     frame_face = detect_face(frame)
     cv.imshow("Webcam Feed", frame_face)
-    
+
+    obstacle.addto_x(-8)
+    if obstacle.superior_pillar[0] + obstacle.superior_pillar[2] < 0:
+        obstacle.set_x(screen_w)
+        obstacle.set_y(rd.choice(range(0,450)))
+
     key = cv.waitKey(1) & 0xFF
     
     if key == ord('q'): break
