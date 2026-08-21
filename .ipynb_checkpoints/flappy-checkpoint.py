@@ -2,7 +2,7 @@ import cv2 as cv
 import random as rd
 
 cap = cv.VideoCapture(0)
-face_cascade = cv.CascadeClassifier('haarcascade_frontalface_default.xml')
+face_cascade = cv.CascadeClassifier('haarcascade_frontalface_alt2.xml')
 
 # BGR
 color = (0, 255, 0)
@@ -19,11 +19,12 @@ cap.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
 screen_w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
 screen_h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
 
-scale = 2
-detect_w = screen_w // 2
-detect_h = screen_h // 2
+scale = 1.2
+detect_w = int(screen_w // scale)
+detect_h = int(screen_h // scale)
 
 print('Capture dimensions:', screen_w, 'x', screen_h)
+print('Detect dimensions :', detect_w, 'x', detect_h)
 
 line1 = ((int(0.3*screen_w), 0), (int(0.3*screen_w), screen_h))
 line2 = ((int(0.7*screen_w), 0), (int(0.7*screen_w), screen_h))
@@ -66,16 +67,26 @@ class Obstacle:
     def draw(self, frame):
         p1 = self.superior_pillar
         p2 = self.inferior_pillar
-        cv.rectangle(frame, (p1[0], p1[1]), (p1[0]+p1[2], p1[1]+p1[3]), self.color, 5)
-        cv.rectangle(frame, (p2[0], p2[1]), (p2[0]+p2[2], p2[1]+p2[3]), self.color, 5)
+        cv.rectangle(frame, (p1[0], p1[1]), (p1[0]+p1[2], p1[1]+p1[3]), self.color, -1)
+        cv.rectangle(frame, (p2[0], p2[1]), (p2[0]+p2[2], p2[1]+p2[3]), self.color, -1)
 
     def touching(self, circle):
         for pillar in self.get_pillars():
-            is_between_x1_and_x2 = circle[0] + circle_r > pillar[0] and (pillar[0] + pillar[2]) > circle[0] - circle_r
-            is_between_y1_and_y2 = circle[1] + circle_r > pillar[1] and (pillar[1] + pillar[3]) > circle[1] - circle_r
+            is_between_x1_and_x2 = (circle[0] + circle_r) > pillar[0] and (pillar[0] + pillar[2]) > (circle[0] - circle_r)
+            is_between_y1_and_y2 = (circle[1] + circle_r) > pillar[1] and (pillar[1] + pillar[3]) > (circle[1] - circle_r)
         
             if is_between_x1_and_x2 and is_between_y1_and_y2:
                 return True
+        return False
+
+    def passingThrough(self, circle):
+        p1, p2 = self.get_pillars()
+
+        is_between_x1_and_x2 = (circle[0] + circle_r) > p1[0] and (p1[0] + p1[2]) > (circle[0] - circle_r)
+        is_inside_hole = (circle[1] - circle_r) > (p1[1] + p1[3]) and p2[1] > (circle[1] + circle_r)
+        
+        if is_between_x1_and_x2 and is_inside_hole:
+            return True
         return False
 
 def error(msg:str):
@@ -94,34 +105,35 @@ def detect_face(frame):
     face_img = cv.flip(face_img, 1)
 
     detect_img = cv.resize(face_img, (detect_w, detect_h))
-    face_rect = face_cascade.detectMultiScale(detect_img, scaleFactor=1.2, minNeighbors=5)
+    face_rect = face_cascade.detectMultiScale(
+        detect_img,
+        scaleFactor=1.1,
+        minNeighbors=4
+    )
+
     for (x, y, w, h) in face_rect:
-        x, y, w, h = scale * x, scale * y, scale * w, scale * h
-        coord = (x + w // 2, y + h // 2)
+        x, y, w, h = int(scale * x), int(scale * y), int(scale * w), int(scale * h)
+        coord = (int(x + w // 2), int(y + h // 2))
 
         if obstacle.get_x() <= line1[0][0]:
             score_enabled = False
         
-        if obstacle.touching((coord[0], coord[1])):
-            color = (0, 0, 255)
-            score=0
-            score_enabled = False
-        else:
-            color = (0, 255, 0)
-
-        if not obstacle_scored and score_enabled:
-            obstacle_right = obstacle.get_x() + obstacle.width
-            obstacle_holetop = obstacle.superior_pillar[3]
-            obstacle_holebot = obstacle.superior_pillar[3] + obstacle.hole_size
-        
-            if obstacle_right < coord[0] and obstacle_holetop < coord[1] and obstacle_holebot > coord[1]:
-                score += 1
-                obstacle_scored = True
-
         if obstacle.get_x() >= line2[0][0]:
             score_enabled = True
 
-        if(coord[0]>line1[0][0] and coord[0]<line2[0][0]):
+        if (coord[0] > line1[0][0] and coord[0] < line2[0][0]):
+            if obstacle.touching((coord[0], coord[1])):
+                color = (0, 0, 255)
+                score=0
+                score_enabled = False
+            else:
+                color = (0, 255, 0)
+    
+            if obstacle.passingThrough((coord[0], coord[1])):
+                if score_enabled:
+                    score += 1
+                score_enabled = False
+            
             cv.circle(face_img, coord, circle_r, color, 5)
 
     cv.line(face_img, line1[0], line1[1], border_color, 3)
