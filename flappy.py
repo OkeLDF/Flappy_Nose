@@ -1,7 +1,16 @@
 import cv2 as cv
 import random as rd
 
-cap = cv.VideoCapture(0)
+def get_best_camera_index():
+    cap = cv.VideoCapture(2, cv.CAP_V4L2)
+    if cap.isOpened():
+        cap.release()
+        return 1
+    return 0
+
+camera_idx = get_best_camera_index()
+cap = cv.VideoCapture(camera_idx)
+
 face_cascade = cv.CascadeClassifier('haarcascade_frontalface_alt2.xml')
 
 # BGR
